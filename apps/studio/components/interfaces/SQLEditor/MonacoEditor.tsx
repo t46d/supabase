@@ -57,8 +57,12 @@ const MonacoEditor = ({
   const snapV2 = useSqlEditorV2StateSnapshot()
   const tabsSnap = useTabsStateSnapshot()
   const aiSnap = useAiAssistantStateSnapshot()
-  const { openSidebar } = useSidebarManagerSnapshot()
+  const { openSidebar, toggleSidebar } = useSidebarManagerSnapshot()
 
+  const [isAIAssistantHotkeyEnabled] = useLocalStorageQuery(
+    LOCAL_STORAGE_KEYS.HOTKEY_SIDEBAR(SIDEBAR_KEYS.AI_ASSISTANT),
+    true
+  )
   const [intellisenseEnabled] = useLocalStorageQuery(
     LOCAL_STORAGE_KEYS.SQL_EDITOR_INTELLISENSE,
     true
@@ -74,10 +78,45 @@ const MonacoEditor = ({
 
   const executeQueryRef = useRef(executeQuery)
   executeQueryRef.current = executeQuery
+  const aiKeybindingDisposablesRef = useRef<Array<{ dispose?: () => void }>>([])
+
+  useEffect(() => {
+    return () => {
+      aiKeybindingDisposablesRef.current.forEach((disposable) => disposable?.dispose?.())
+      aiKeybindingDisposablesRef.current = []
+    }
+  }, [])
 
   const handleEditorOnMount: OnMount = async (editor, monaco) => {
     editorRef.current = editor
     monacoRef.current = monaco
+
+    aiKeybindingDisposablesRef.current.forEach((disposable) => disposable?.dispose?.())
+    aiKeybindingDisposablesRef.current = []
+
+    if (isAIAssistantHotkeyEnabled) {
+      const disposables: Array<{ dispose?: () => void }> = []
+
+      const unbindCmdI = monaco.editor.addKeybindingRule({
+        keybinding: monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyI,
+        command: null,
+        when: 'editorTextFocus',
+      })
+      disposables.push(unbindCmdI)
+
+      const openAssistantAction = editor.addAction({
+        id: 'supabase.openAiAssistant',
+        label: 'Toggle AI Assistant',
+        keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyI],
+        contextMenuGroupId: 'navigation',
+        run: () => {
+          toggleSidebar(SIDEBAR_KEYS.AI_ASSISTANT)
+        },
+      })
+      disposables.push(openAssistantAction)
+
+      aiKeybindingDisposablesRef.current = disposables
+    }
 
     const model = editorRef.current.getModel()
     if (model !== null) {
